@@ -607,45 +607,45 @@ func OverlappedSeriesMerge(s ...Series) Series {
 	if len(s) == 0 {
 		return nil
 	}
-	return &chainSeries{
+	return &overlappedSeries{
 		labels: s[0].Labels(),
 		series: s,
 	}
 }
 
-type chainSeries struct {
+type overlappedSeries struct {
 	labels labels.Labels
 	series []Series
 }
 
-func (m *chainSeries) Labels() labels.Labels {
-	return m.labels
+func (s *overlappedSeries) Labels() labels.Labels {
+	return s.labels
 }
 
-func (m *chainSeries) Iterator() chunkenc.Iterator {
-	iterators := make([]chunkenc.Iterator, 0, len(m.series))
-	for _, s := range m.series {
+func (s *overlappedSeries) Iterator() chunkenc.Iterator {
+	iterators := make([]chunkenc.Iterator, 0, len(s.series))
+	for _, s := range s.series {
 		iterators = append(iterators, s.Iterator())
 	}
 	return newChainSampleIterator(iterators)
 }
 
-// chainSampleIterator is responsible to iterate over samples from different iterators of the same time series.
+// overlapSampleIterator is responsible to iterate over samples from different iterators of the same time series.
 // If one or more samples overlap, one sample from random overlapped ones is kept and all others with the same
 // timestamp are dropped.
-type chainSampleIterator struct {
+type overlapSampleIterator struct {
 	iterators []chunkenc.Iterator
 	h         samplesIteratorHeap
 }
 
 func newChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
-	return &chainSampleIterator{
+	return &overlapSampleIterator{
 		iterators: iterators,
 		h:         nil,
 	}
 }
 
-func (c *chainSampleIterator) Seek(t int64) bool {
+func (c *overlapSampleIterator) Seek(t int64) bool {
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
 		if iter.Seek(t) {
@@ -655,15 +655,15 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 	return len(c.h) > 0
 }
 
-func (c *chainSampleIterator) At() (t int64, v float64) {
+func (c *overlapSampleIterator) At() (t int64, v float64) {
 	if len(c.h) == 0 {
-		panic("chainSampleIterator.At() called after .Next() returned false.")
+		panic("overlapSampleIterator.At() called after .Next() returned false.")
 	}
 
 	return c.h[0].At()
 }
 
-func (c *chainSampleIterator) Next() bool {
+func (c *overlapSampleIterator) Next() bool {
 	if c.h == nil {
 		for _, iter := range c.iterators {
 			if iter.Next() {
@@ -695,7 +695,7 @@ func (c *chainSampleIterator) Next() bool {
 	return len(c.h) > 0
 }
 
-func (c *chainSampleIterator) Err() error {
+func (c *overlapSampleIterator) Err() error {
 	for _, iter := range c.iterators {
 		if err := iter.Err(); err != nil {
 			return err
@@ -820,7 +820,7 @@ func (c *verticalChunkIterator) Next() bool {
 		}
 		overlapped = append(overlapped, &chunkToSeriesDecoder{
 			labels: c.labels,
-			Meta:   last,
+			iter:   last.Chunk.Iterator(nil),
 		})
 		last = next
 	}
@@ -832,7 +832,7 @@ func (c *verticalChunkIterator) Next() bool {
 	// Add last, not yet included overlap.
 	overlapped = append(overlapped, &chunkToSeriesDecoder{
 		labels: c.labels,
-		Meta:   c.At(),
+		iter:   c.At().Chunk.Iterator(nil),
 	})
 
 	// TODO(bwplotka): We could have a quick path for **exactly** the same chunks.

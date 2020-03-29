@@ -99,7 +99,6 @@ func TestSelectSorted(t *testing.T) {
 		testutil.Equals(t, inputTotalSize, len(result))
 	})
 	t.Run("chunk querier", func(t *testing.T) {
-		t.Skip("TODO(bwplotka: Unskip when db will implement ChunkQuerier.")
 		querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
 		testutil.Ok(t, err)
 		defer querier.Close()
